@@ -1,0 +1,54 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May 30 13:01:51 2019
+
+@author: jesse
+"""
+
+### Steps for getting code working
+
+X Read in raster files
+X - Currently stacked .tifs
+- Will need to add a function to read in .jpg2000 or HDF5,
+    whatever data type we decide to go with from the data pipeline
+- Read as dask array
+
+Create mask
+- NDVI stack
+    - NDVI range
+    - Is there a way to incorporate cumulative change?
+- Edge map
+    - Combine sum and max??
+- Combine NDVI and Edges 
+    - Combine NDVI range and Edges
+- Need to test in non-ag dominated areas
+    - Does it effectively mask out forest/other vegetation???
+- Check min/max for other bands
+
+Segment the imagery
+- skimage parameter testing
+
+Cluster segments
+- Opportunity to explore methods here
+- OBIA/eCognition methods
+
+Merge segments
+- Need to investigate and improve this step
+- Incorporate similarity across clustering variables and spatial proximity
+- Need to add step to deal with small outlier segments
+    - Perhaps a "fill holes" approach like in the raster to segments library
+
+Write to shapefile
+- Might have to update this in cases where we use spatial subset that does not
+    match the same "upper left" corner
+
+Evaluate accuracy and timing
+- Spatial accuracy metrics
+    - Boundary accuracy
+    - Area accuracy
+    - Oversegmentation/Undersegmentation
+- Reference data
+    - Need full shapefile of digitized fields
+    - Add CDL data to digitized fields
+- Timing
+
