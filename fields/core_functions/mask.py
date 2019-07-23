@@ -13,7 +13,8 @@ import numpy.ma as ma
 import scipy.ndimage as ndi
 from fields.core_functions.ndvi import compute_ndvi
 from fields.IO.read_rasters import read_tif_to_array
-from fields.core_functions.edges import edges_from_3Darray_max, edges_from_3Darray_sum
+from fields.core_functions.edges import edges_from_3Darray_max, edges_from_3Darray_sum, combine_edges
+from fields.core_functions.ndvi import ndvi_range_from_stack
 from fields.utilities.utilities import normalize
 
 
@@ -106,3 +107,28 @@ def time_stack_ndvi_and_edges(folder_path, rasters):
         count += 1
         
     return ndvi_stack, cumulative_edges_max, cumulative_edges_sum
+
+#### Combined functions for workflow
+def mask_func(**mask_inputs):
+   folder_path = mask_inputs['folder_path']
+   rasters = mask_inputs['rasters']
+   max_weight = mask_inputs['max_edge_weight']
+   sum_weight = mask_inputs['sum_edge_weight']
+   ndvi_weight = mask_inputs['ndvi_weight']
+   edges_weight = mask_inputs['edges_weight']
+   binary_threshold = mask_inputs['binary_threshold']
+   
+   # Loop through rasters to build a stacked array of ndvi and two cumulative edge arrays: max and sum
+   ndvi_stack, edges_max, edges_sum = time_stack_ndvi_and_edges(folder_path, rasters)
+   # combine edge arrays into a single normalized (0-1) array, each weighted by an input factor
+   edges_combined = normalize(combine_edges(normalize(edges_max), normalize(edges_sum), 
+                                         max_weight=max_weight, sum_weight=sum_weight))
+   # combine edge array with normalized (0-1) ndvi range, each weighted by an input factor
+   mask_combo = create_combined_mask(ndvi = 1 - normalize(ndvi_range_from_stack(ndvi_stack)), 
+                                     edges = edges_combined, 
+                                     ndvi_weight = ndvi_weight, edges_weight = edges_weight)
+   # create a binary mask (crop/non-crop) to use during segmentation
+   binary_mask = create_binary_mask(mask_combo, threshold=binary_threshold, fill_holes=True)
+   
+   return binary_mask
+        

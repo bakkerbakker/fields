@@ -12,6 +12,8 @@ import numpy as np
 from skimage import filters, exposure, feature
 
 
+
+
 def edges_from_3Darray_max(array, perc=(0,99)):
   '''
   loops through each band in the array, 

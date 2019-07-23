@@ -39,6 +39,8 @@ from matplotlib import pyplot as plt
 import scipy.ndimage as ndi
 import numpy as np
 
+import dask
+
 #%%
 # Run to reload the fields package after updating code in the individual .py files
 imp.reload(fields)
@@ -77,10 +79,88 @@ print(folder_path + rasters[0])
 # read list of rasters to derive ndvi_stack (ndvi array for each time slice) and cumulative edges
 ndvi_stack, edges_max, edges_sum = time_stack_ndvi_and_edges(folder_path, rasters)
 
+
+#%%
+
+### IN DEVELOPMENT
+
+### QUESTION FOR ERIC: How to make the function within the for loop modular? 
+### It creates the cumulative edges layer and the NDVI stack in the first loop
+### but needs to be able to reference them in the subsequent loops.
+### However, in the second loops they are undefined local variables instead of 
+### persisting from the first loop.
+
+### Set up the for loop function that opens the raster stack to take 
+### a function as an argument to process within the loop
+def time_stack_for_loop(folder_path, rasters, loop_function, return_vals):
+    '''
+    function to read in a list of raster files and loop through each raster.
+    the function within the loop ("loop_function") needs to be defined externally
+    and should take the "band_stack" as an input parameter.
+    the values that will be returned, passed as a list to the function.
+    '''
+    
+    count = 0
+    
+    for raster in rasters:
+        # define raster path
+        filepath = folder_path + raster
+        
+        # read raster to array
+        band_stack = read_tif_to_array(filepath)
+        
+        # pass band_stack to loop function
+        return_vals = loop_function(band_stack, count)
+        
+        # update count for each loop
+        count += 1
+
+    return return_vals
+
+
+def ndvi_and_edges_for_loop(band_stack, count):
+    # compute NDVI
+    ndvi_array = compute_ndvi(band_stack[3], band_stack[2])
+
+    # add NDVI to the band stack to process through the edge detection step along with the other bands
+    band_stack = np.concatenate((band_stack, ndvi_array[np.newaxis,:,:]), axis=0)
+
+    # calculate edges from band stack
+    edges_max = edges_from_3Darray_max(band_stack)
+    edges_sum = edges_from_3Darray_sum(band_stack)
+    
+    if count == 0:
+        # create NDVI stack
+        ndvi_stack = np.copy(ndvi_array)
+        print("ndvi array shape:", ndvi_stack.shape)
+        # create array for cumulative edges
+        cumulative_edges_max = np.copy(edges_max)
+        cumulative_edges_sum = np.copy(edges_sum)
+    else:
+        # append NDVI bands into NDVI stack
+        ndvi_stack = np.dstack((ndvi_stack, ndvi_array))
+        print("ndvi array shape:", ndvi_stack.shape)
+        # compute cumulative edges into single array
+        cumulative_edges_max = np.maximum(cumulative_edges_max, edges_max)
+        cumulative_edges_sum += edges_sum
+       
+    # clear variables that aren't needed in next steps
+    band_stack = None
+    ndvi_array = None
+    edges_max = None
+    edges_sum = None
+    
+    return ndvi_stack, cumulative_edges_max, cumulative_edges_sum
+    
+return_vals = ["ndvi_stack", "cumulative_edges_max", "cumulative_edges_sum"]
+#return_vals_test = ["test"]
+ndvi_stack, edges_max, edges_sum = time_stack_for_loop(folder_path, rasters, ndvi_and_edges_for_loop, return_vals_test)
+
+
 #%%
 # check ndvi_stack output for expected shape/results
 print(ndvi_stack[:,:,1].shape)
-visualize_2D_array_0_1000(ndvi_stack[:,:,2])
+visualize_2D_array_0_1000(ndvi_stack[:,:,2], title="NDVI Band Example")
 
 #%%
 # visualize the edges and NDVI range
@@ -109,12 +189,71 @@ visualize_2D_array_0_1000(1-normalize(ndvi_range_from_stack(ndvi_stack)),
 #%%
 
 # Create Mask from NDVI and Edges
-# each 
-mask_combo = create_combined_mask(ndvi = 1- normalize(ndvi_range_from_stack(ndvi_stack)), edges = edges_combined,
-                     ndvi_weight = 1, edges_weight = 3)
+mask_combo = create_combined_mask(ndvi = 1 - normalize(ndvi_range_from_stack(ndvi_stack)), edges = edges_combined,
+                     ndvi_weight = 1, edges_weight = 2)
 
-visualize_2D_array_0_1000(mask_combo, title="Combined Mask Array, NDVI Range and Cumularive Edges")
+visualize_2D_array_0_1000(mask_combo, title="Combined Mask Array, NDVI Range and Cumulative Edges")
 
+
+#%%
+from skimage.segmentation import (morphological_chan_vese, 
+                                  morphological_geodesic_active_contour,
+                                  inverse_gaussian_gradient,
+                                  checkerboard_level_set)
+
+# testing Morphological GAC
+
+def store_evolution_in(lst):
+    """
+    returns a callback function to store the evolution of the
+    level sets in the given list.
+    """
+    
+    def _store(x):
+        lst.append(np.copy(x))
+        
+    return _store
+
+image = mask_combo
+gimage = inverse_gaussian_gradient(image)
+
+# initial level set
+init_ls = np.zeros(image.shape, dtype=np.int8)
+init_ls[10:-10, 10:-10] = 1
+# list with intermediate results for plotting the evolution
+evolution = []
+callback = store_evolution_in(evolution)
+ls = morphological_geodesic_active_contour(gimage, 20, init_ls, 
+                                           smoothing=1, balloon = -1,
+                                           threshold = 0.25,
+                                           iter_callback = callback)
+
+
+#%%
+
+### Display morph snakes
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+ax = axes.flatten()
+
+ax[0].imshow(image)
+ax[0].set_axis_off()
+ax[0].contour(ls, [0.5], colors = 'r')
+ax[0].set_title("Morphologiacal GAC segmentation", fontsize=12)
+
+ax[1].imshow(ls, cmap='gray')
+ax[1].set_axis_off()
+contour = ax[1].contour(evolution[0], [0.5], colors='g')
+contour.collections[0].set_label("Iteration 0")
+contour = ax[1].contour(evolution[10], [0.5], colors='y')
+contour.collections[0].set_label("Ieration 10")
+contour = ax[1].contour(evolution[-1], [0.5], colors='r')
+contour.collections[0].set_label("iteration 20")
+ax[1].legend(loc='upper right')
+title = "Morphological GAC Evolution"
+ax[1].set_title(title, fontsize=12)
+
+fig.tight_layout()
+plt.show()
 #%%
 
 # testing what it looks like to pass the combined edges layer through an edge filter (edge of the edges)
@@ -122,7 +261,10 @@ visualize_2D_array_0_1000(mask_combo, title="Combined Mask Array, NDVI Range and
 mask_combo_edges = filters.sobel(mask_combo)
 mask_combo_edges = normalize(mask_combo_edges)
 
-visualize_2D_array_0_1000(mask_combo_edges)
+#visualize_2D_array_0_1000(mask_combo_edges)
+# pass this to the watershed segmentation to compute distance map
+mask_combo_canny_edges = array_2D_canny_edges(mask_combo, 2.8)
+visualize_2D_array_0_1000(mask_combo_canny_edges)
 
 #%%
 
@@ -134,15 +276,15 @@ visualize_2D_array_0_1000(return_masked_array(mask_combo, lower_mask_pct, upper_
 
 #%%
 # Convert mask to binary array, 
-binary_threshold = .18
+binary_threshold = .16
 binary_mask = create_binary_mask(mask_combo, threshold=binary_threshold, fill_holes=True)
 visualize_2D_array_0_1000(binary_mask, title="Binary Mask, Threshold:" + str(binary_threshold))
 
 #%%
 # Create ternary (three-category) mask, identifying Field, Not-field, Uncertain
 
-lower_thresh = .12
-upper_thresh = .3
+lower_thresh = .15
+upper_thresh = .25
 ternary_mask = create_ternary_mask(mask_combo, lower_thresh = lower_thresh, upper_thresh = upper_thresh)
 visualize_2D_array_0_1000(ternary_mask, 
                           title="Ternary Mask, Threshold: Lower Thresh = " + str(lower_thresh) + ", Upper Thresh = " + str(upper_thresh),
@@ -169,6 +311,34 @@ rgb_image = prep_rgb_image(read_tif_to_array(raster_fp), gamma=.5, clip_val_r = 
 
 visualize_3_band_image_array_0_1000(rgb_image, title="RGB image test, raster image index:" + str(raster_image_index))
 
+#%%
+
+# Apply mask to rgb image
+image_to_segment = apply_mask(rgb_image, np.logical_not(binary_mask), masked_value=0)
+visualize_3_band_image_array_0_1000(image_to_segment)
+
+#%%
+
+## Active contour segmentation experimentation
+from skimage.segmentation import random_walker
+markers = ternary_mask
+labels_rw = random_walker(mask_combo, markers, beta = 100, mode='cg_mg')
+
+fig = plt.figure(figsize=(10,10))
+plt.imshow(labels_rw[0:1000, 0:1000])
+
+#%%
+
+# segment rgb image
+from skimage.segmentation import felzenszwalb, mark_boundaries
+labels = felzenszwalb(image_to_segment, scale = 50, sigma=.3, min_size=50)
+
+fig = plt.figure(figsize=(10,10))
+plt.imshow(mark_boundaries(image_to_segment[0:1000, 0:1000], labels[0:1000, 0:1000]))
+
+
+### Try morphological snakes: https://scikit-image.org/docs/dev/auto_examples/segmentation/plot_morphsnakes.html#sphx-glr-auto-examples-segmentation-plot-morphsnakes-py
+
 
 #%%
 
@@ -176,16 +346,30 @@ visualize_3_band_image_array_0_1000(rgb_image, title="RGB image test, raster ima
 # Segment the imagery   
 ### Sample workflow
 #canny_edges = array_2D_canny_edges(binary_mask, 1)
+
+## pass this to the watershed segmentation to compute distance map
+#mask_combo_canny_edges = array_2D_canny_edges(mask_combo, 2.5)
+#dt = distance_from_edges(mask_combo_canny_edges)
+
 dt = distance_from_edges(binary_mask)
 markers = local_max(dt, min_dist=3)
-labels = watershed_segments(dt,markers)
-visualize_2D_array_0_1000(labels, cmap='rainbow')
+labels = watershed_segments(dt, markers, mask = binary_mask)
+fig = plt.figure(figsize=(10,10))
+plt.imshow(mark_boundaries(image_to_segment[0:1000, 0:1000], labels[0:1000, 0:1000]))
 #watershed_labels = watershed_segments(input_maskedArray,distanceFromEdges(array2D_toCannyEdges(input_maskedArray, **segmentation_config)),
                                          #localMax(distanceFromEdges(array2D_toCannyEdges(input_maskedArray, **segmentation_config)),**segmentation_config))
 
-
 #%%
 # segmentation region properties - 
+# cluster segments based on region properties
+ # merge segments
+
+### TEST: region props table https://scikit-image.org/docs/dev/api/skimage.measure.html#regionprops-table                                        
+### Process idea: loop through different bands/intermediate data layers as inputs for the "intensity image"
+### to be passed to the skimage.measure.regionprops_table() function and append each as a column in a pandas df
+### where each row is a segmented region. Then use that table for clustering. 
+### Question for Eric: Is this the right data structure for this?                                         
+                                         
 # opportunity here for pulling properties from other arrays i think
 # this might be better suited to take the property type as an input argument
 # see regionprops: http://scikit-image.org/docs/dev/api/skimage.measure.html?#skimage.measure.regionprops

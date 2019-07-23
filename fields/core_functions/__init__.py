@@ -9,3 +9,4 @@ from .ndvi import *
 from .edges import *
 from .mask import *
 from .segmentation import *
+from .merge import *

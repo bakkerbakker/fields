@@ -65,4 +65,23 @@ def write_segments_to_shapefile(input_array, src_transform, src_crs, output_file
         for geom in geoms:
             layer.write(geom)
 
-
+#### Combined function for workflow
+def write_shapefile_func(merged_labels, **write_shp_inputs):
+    # Set output location
+    output_file = write_shp_inputs['output_folder_path'] + write_shp_inputs['output_file']
+    
+    # Get geometadata from input raster, this should be one of the rasters used 
+    # in the first step of the process to ensure that the shp output is correct.
+    raster_folder_path = write_shp_inputs['raster_folder_path']
+    rasters = write_shp_inputs['rasters']
+    raster_image_index = write_shp_inputs['raster_image_index']
+    raster_filepath = raster_folder_path + rasters[raster_image_index]
+    
+    transform = read_raster_to_transform(raster_filepath)
+    crs = read_raster_to_crs(raster_filepath)
+    
+    # write labeled/merged segments from the "merge_segments" function to a shapefile
+    write_segments_to_shapefile(input_array = merged_labels,
+                                src_transform = transform,
+                                src_crs = crs,
+                                output_file = output_file)

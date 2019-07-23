@@ -73,14 +73,3 @@ def clip_array_abs(array, min_val, max_val):
     band_clp = np.clip((array), a_min = min_val, a_max = max_val)
     return band_clp
   
-def prep_rgb_image(input_bgrn_array, gamma=1, clip_val_r = 1500, clip_val_g = 1500, clip_val_b = 1500): 
-    '''
-    Uses skimage exposure.adjust_gamma to make image more readable.
-    '''
-    # rearrange to rgb 3-band image
-    rgb_input = np.array([exposure.adjust_gamma(normalize(clip_array_abs(input_bgrn_array[2], 0, clip_val_r)), gamma=gamma),
-                          exposure.adjust_gamma(normalize(clip_array_abs(input_bgrn_array[1], 0, clip_val_g)), gamma=gamma),
-                          exposure.adjust_gamma(normalize(clip_array_abs(input_bgrn_array[0], 0, clip_val_b)), gamma=gamma)])
-    rgb_input = np.transpose(rgb_input, (1, 2, 0))
-    print(rgb_input.shape)
-    return rgb_input

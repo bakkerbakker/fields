@@ -7,8 +7,11 @@ Created on Tue Jun  4 13:07:28 2019
 
 ### Segmentation functions
 import skimage
-from skimage import feature, measure, morphology
+from skimage import feature, measure, morphology, segmentation, exposure
 import scipy.ndimage as ndi
+import numpy as np
+from fields.IO.read_rasters import read_tif_to_array, prep_rgb_image
+from fields.core_functions.mask import apply_mask
 
 # canny edge detection
 def array_2D_canny_edges(input_img, canny_sigma = 1):
@@ -42,11 +45,12 @@ def local_max(input_dt, min_dist = 5):
     
     return markers
 
-# watershed segmentation
-def watershed_segments(input_dt, input_markers):
+# watershed segmentation with mask
+def watershed_segments(input_dt, input_markers, mask = None, compactness = 0):
     print("Watershed segmentation")
-    labels = morphology.watershed(-input_dt, input_markers)
-    
+
+    labels = morphology.watershed(-input_dt, input_markers, mask = mask, compactness = compactness)
+
     return labels
 
 # plot input image with edges
@@ -57,7 +61,52 @@ def plot_labels_on_input_img(input_img, labels):
 
 
 
+#### Combined functions for workflow
+def segmentation_fz_func(rgb_image, mask_array, **segmentation_fz_inputs):
+    # define inputs
+    mask = mask_array
+    fz_scale = segmentation_fz_inputs['fz_scale']
+    fz_sigma = segmentation_fz_inputs['fz_sigma']
+    fz_min_size = segmentation_fz_inputs['fz_min_size']
+                               
 
+    # Apply mask to rgb image
+    image_to_segment = apply_mask(rgb_image, 
+                                  np.logical_not(mask), 
+                                  masked_value=0)
+    # Segment the image
+    labels = segmentation.felzenszwalb(image_to_segment, 
+                          scale = fz_scale, 
+                          sigma=fz_sigma, 
+                          min_size=fz_min_size)
+    # return labeled segments
+    return labels
+
+
+def segmentation_ws_func(mask_array, edges_array, **segmentation_ws_inputs):
+    """
+    During testing, the edges_array was simply the binary mask array,
+    but this can be tweaked. For instance, another option was a canny
+    edge output of the combined edges array
+    """
+    # define inputs within function
+    mask = mask_array
+    edges = edges_array
+    ws_min_dist = segmentation_ws_inputs['ws_min_dist']
+    ws_compactness = segmentation_ws_inputs['ws_compactness']
+    
+    # map distance from mask edges
+    # for now, we will just pass the mask array
+    dt = distance_from_edges(edges)
+    # create markers for watershed pooling at local max distance
+    markers = local_max(dt, min_dist=ws_min_dist)
+    # watershed segmentation
+    labels = watershed_segments(input_dt = dt, 
+                                input_markers = markers, 
+                                mask = mask, 
+                                compactness = ws_compactness)
+    # return labeled segments
+    return labels
 
 
 
