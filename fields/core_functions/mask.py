@@ -73,10 +73,10 @@ def time_stack_ndvi_and_edges(folder_path, rasters):
         
         # read raster to array
         band_stack = read_tif_to_array(filepath)
-
+        print("band_stack type:", type(band_stack))
         # compute NDVI
         ndvi_array = compute_ndvi(band_stack[3], band_stack[2])
-
+        print("ndvi array type:", type(ndvi_array))
         # add NDVI to the band stack to process through the edge detection step along with the other bands
         band_stack = np.concatenate((band_stack, ndvi_array[np.newaxis,:,:]), axis=0)
 
@@ -98,7 +98,10 @@ def time_stack_ndvi_and_edges(folder_path, rasters):
             # compute cumulative edges into single array
             cumulative_edges_max = np.maximum(cumulative_edges_max, edges_max)
             cumulative_edges_sum += edges_sum
-           
+
+        print("ndvi stack type:", type(ndvi_stack))
+        print("edge array type:", type(cumulative_edges_sum))   
+        
         # clear variables that aren't needed in next steps
         band_stack = None
         ndvi_array = None

@@ -13,7 +13,7 @@ X - Currently stacked .tifs
     whatever data type we decide to go with from the data pipeline
 - Read as dask array
 
-Create mask
+X Create mask
 - NDVI stack
     - NDVI range
     - Is there a way to incorporate cumulative change?
@@ -25,24 +25,24 @@ Create mask
     - Does it effectively mask out forest/other vegetation???
 - Check min/max for other bands
 
-Segment the imagery
+X Segment the imagery
 - skimage parameter testing
 
-Cluster segments
+X Cluster segments
 - Opportunity to explore methods here
 - OBIA/eCognition methods
 
-Merge segments
+X Merge segments
 - Need to investigate and improve this step
 - Incorporate similarity across clustering variables and spatial proximity
 - Need to add step to deal with small outlier segments
     - Perhaps a "fill holes" approach like in the raster to segments library
 
-Write to shapefile
+X Write to shapefile
 - Might have to update this in cases where we use spatial subset that does not
     match the same "upper left" corner
 
-Evaluate accuracy and timing
+X Evaluate accuracy and timing
 - Spatial accuracy metrics
     - Boundary accuracy
     - Area accuracy
@@ -52,3 +52,21 @@ Evaluate accuracy and timing
     - Add CDL data to digitized fields
 - Timing
 
+
+Data:
+Get list of tile IDs for MN
+Prep py file to run on MSI to access the stored data
+GDAL process or xarray???
+
+xarray
+- get data loaded into xarray
+    - select BGRN bands from granule
+    - mosaic tiles
+    - time stack tiles
+    - what format? from jpg2000 in ESA granule to netCDF?? HDF5??
+    - do we save out the mosaic?? (probably??)
+dask
+- get workflow processing into dask
+- rewrite some of the mask/edge/ndvi to be more modular, 
+  need to take a dask/xarray instead of reading tif directly
+- this will mean reading in a file lazily, then doing the edge/ndvi on that, instead of on read

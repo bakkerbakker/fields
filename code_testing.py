@@ -38,14 +38,207 @@ from fields import *
 from matplotlib import pyplot as plt
 import scipy.ndimage as ndi
 import numpy as np
-
-import dask
+import dask.array as da
+import geopandas as gpd
+import pandas as pd
 
 #%%
 # Run to reload the fields package after updating code in the individual .py files
 imp.reload(fields)
 print(dir(fields))
 
+#%%
+"""
+Testing shapefile evaluation/comparison with validation data
+"""
+
+ref_fp = "data/reference_fields/DigitizedRefFields_CDLsummaryjoin_TargetArea2.shp"
+targetarea_fp = "data/reference_fields/TargetArea2.shp"
+test_fp = "outputs/test.shp"
+
+
+ref_df = gpd.read_file(ref_fp)
+target_area_df = gpd.read_file(targetarea_fp)
+test_df = gpd.read_file(test_fp)
+
+def shapefile_to_gpd_df(shp_fp):
+    gpd_df = gpd.read_file(shp_fp)
+    return gpd_df
+
+print("reference fields:", ref_df['id'].count(), "crs:", ref_df.crs)
+print("output fields:", test_df['geometry'].count(), "crs:", test_df.crs)
+
+#%%
+## change crs to WGS 84 / UTM zone 14N
+ref_df_transform = ref_df.to_crs({'init': 'epsg:32614'})
+print(ref_df_transform.crs, ref_df_transform.columns)
+
+#%%
+ref_avg_acre = ref_df['Acres'].sum()/ref_df['id'].count()
+ref_avg_acre 
+
+#%%
+
+#test_df.crs
+
+print("target area bounds:", target_area_df.bounds)
+print("reference fields bounds:", ref_df.bounds)
+print("output fields bounds:", test_df.bounds)
+#%%
+
+# convert both shp to same crs, in this case 'epsg:32614' WGS 84 / UTM zone 14N
+def convert_crs(input_gpd_df, crs_dest = {'init': 'epsg:32614'}):
+    if input_gpd_df.crs == crs_dest:
+        output_gpd_df = input_gpd_df.copy()
+    else:
+        output_gpd_df = input_gpd_df.to_crs(crs_dest)        
+    return output_gpd_df
+
+ref_df_crs = convert_crs(ref_df)
+print(ref_df_crs.crs)
+
+#%%
+# get bounding box of study area
+def get_bbox(bbox_df):
+    """
+    Return a list of bbox coordinates in the order: ['minx','miny','maxx','maxy']
+    """
+    bounds_list = ['minx','miny','maxx','maxy']
+    bbox = []
+    for bound in bounds_list:
+        bbox.append(convert_crs(bbox_df).bounds[bound][0])
+    
+    print("bounding box:", bbox)
+    return bbox
+
+#%%
+# select fields from reference and test that are completely within (is this the right spatial selection?) study area bbox
+#print(ref_df_crs.bounds)
+
+def select_within_bbox(select_df, bbox):
+    """
+    Select features from a geopandas df that are completely within a bbox.
+    The bbox coordinates are expected in the order: ['minx','miny','maxx','maxy']
+    """
+    selected_in_bbox_df = select_df.loc[(select_df.bounds['minx'] > bbox[0]) & 
+                                   (select_df.bounds['miny'] > bbox[1]) &
+                                   (select_df.bounds['maxx'] < bbox[2]) &
+                                   (select_df.bounds['maxy'] < bbox[3])].copy()
+    
+    return selected_in_bbox_df
+
+#%%
+
+# optional utility function to drop out the mask feature in the output
+# this should be fixed upstream in the export phase eventually
+# currently the non-field masked area gets exported as a single feature in the shp
+# this needs to be filtered out in order for the field stats to be accurate
+
+### But maybe for now this will get dropped by selecting features completely within 
+### the bounding box 
+
+# test_filtered_df = test_df.loc[(test_df.std
+
+test_df['area_sqkm'] = test_df['geometry'].area/10**6
+test_df['area_sqkm'].sum()
+#%%    
+
+# calculate total area, field count, and average field size
+def field_stats(input_gpd_df):
+    
+    tot_fields = input_gpd_df.count()[0]
+    input_gpd_df['area_sqkm'] = input_gpd_df['geometry'].area/10**6
+    tot_field_area = input_gpd_df['area_sqkm'].sum()
+    avg_field_area = tot_field_area/tot_fields
+    
+    return [tot_fields, tot_field_area, avg_field_area]
+
+def field_area(input_gpd_df):
+    # check crs
+    print(input_gpd_df.crs)
+    
+    input_copy = input_gpd_df.copy()
+    input_copy['area_sqkm'] = input_copy['geometry'].area/10**6
+    tot_field_area = input_copy['area_sqkm'].sum()    
+    print("area (sq km):", tot_field_area)
+    
+    return tot_field_area
+
+
+ref_field_stats = field_stats(ref_df_crs)
+print(field_stats(ref_df_crs))
+
+#%%
+
+ref_field_stats = field_stats(select_within_bbox(convert_crs(ref_df),get_bbox(convert_crs(target_area_df))))
+test_field_stats = field_stats(select_within_bbox(test_df,get_bbox(convert_crs(target_area_df))))
+print("reference fields:",ref_field_stats)
+print("test output fields:",test_field_stats)
+#%%
+
+# intersect the two shapefiles and calculate percent overlap
+# this will probably look like a 2x2 confusion matrix
+# Percent of test fields in reference fields
+# Percent of test fields not in reference fields
+# Percent of reference fields covered by test fields
+# Percent of reference fields not covered by test fields
+
+# Using geopandas set operations: http://geopandas.org/set_operations.html
+
+def spatial_overlap(ref_fields, test_fields):
+    # get total number of fields
+    ref_tot_fields = ref_fields.count()[0]
+    test_tot_fields = test_fields.count()[0]
+    
+    # get area for each input
+    ref_area_tot = field_area(ref_fields)
+    test_area_tot = field_area(test_fields)
+    
+    # get average field area
+    ref_avg_field_area = ref_area_tot/ref_tot_fields
+    test_avg_field_area = test_area_tot/test_tot_fields
+    
+    # intersection: area contained in both geodataframes
+    intersection = gpd.overlay(ref_fields, test_fields, how='intersection')
+    ref_difference = gpd.overlay(ref_fields, test_fields, how='difference')
+    test_difference = gpd.overlay(test_fields, ref_fields, how='difference')
+    
+    # calculate area for each overlap function
+    intersection_area = field_area(intersection)
+    ref_diff_area = field_area(ref_difference)
+    test_diff_area = field_area(test_difference)
+    
+    # calculate percentages for each overlap function
+    ref_int_pct = intersection_area/ref_area_tot
+    test_int_pct = intersection_area/test_area_tot
+    ref_diff_pct = ref_diff_area/ref_area_tot
+    test_diff_pct = test_diff_area/test_area_tot
+    
+    columns = ['total area sq km', 'number of fields', 'average field size', 'intersect area', 'difference area', 'intersect pct', 'difference pct']
+    ref_stats = [ref_area_tot, ref_tot_fields, ref_avg_field_area, intersection_area, ref_diff_area, ref_int_pct, ref_diff_pct]
+    test_stats = [test_area_tot, test_tot_fields, test_avg_field_area, intersection_area, test_diff_area, test_int_pct, test_diff_pct]
+    
+    data = [ref_stats, test_stats]
+    overlay_stats_df = pd.DataFrame(data, columns=columns, index=["reference","test"])
+    overlay_stats_df = overlay_stats_df.transpose()
+
+    print(overlay_stats_df)
+    return overlay_stats_df
+
+### Add a function to save out text file with the info
+### titled with the same reference info as the shapefile
+
+#%%
+bbox_df = get_bbox(convert_crs(target_area_df))
+ref_fields_selected = select_within_bbox(convert_crs(ref_df),bbox_df)
+test_fields_selected = select_within_bbox(test_df,bbox_df)
+
+overlay_stats = spatial_overlap(ref_fields_selected, test_fields_selected)
+overlay_stats
+#%%
+
+ref_fields_selected.plot()
+test_fields_selected.plot()
 #%%
 # folder path to directory containing raster data
 # original folder_path = "C:/Users/jesse/Documents/GISData/Sentinel2/"
@@ -166,9 +359,9 @@ visualize_2D_array_0_1000(ndvi_stack[:,:,2], title="NDVI Band Example")
 # visualize the edges and NDVI range
 visualize_2D_array_0_1000(edges_max, title="Edges Max")
 visualize_2D_array_0_1000(edges_sum, title="Edges Sum")
-visualize_2D_array_0_1000(ndvi_range_from_stack(ndvi_stack), title="NDVI Range")
-visualize_2D_array_0_1000(ndvi_max_from_stack(ndvi_stack), title="NDVI Max")
-visualize_2D_array_0_1000(ndvi_min_from_stack(ndvi_stack), title="NDVI Min")
+visualize_2D_array_0_1000(ndvi_range_from_stack(ndvi_stack), title="NDVI Range", cmap="PiYG")
+visualize_2D_array_0_1000(ndvi_max_from_stack(ndvi_stack), title="NDVI Max", cmap="PiYG")
+visualize_2D_array_0_1000(ndvi_min_from_stack(ndvi_stack), title="NDVI Min", cmap="PiYG")
 #%%
 # create combined edges layer, with variable weights for sum and max layers
 # max identifies more boundaries that only appear in one or two time slices, more noisy
@@ -177,7 +370,7 @@ edges_combined = normalize(combine_edges(normalize(edges_max), normalize(edges_s
                                          max_weight=1, sum_weight=4))
 
 # Closer look at the combined edges
-visualize_2D_array_0_1000(edges_combined, title="Edges Combined")
+visualize_2D_array_0_1000(edges_combined, title="Weighted Edges Combined")
 
 #%%
 
@@ -192,7 +385,9 @@ visualize_2D_array_0_1000(1-normalize(ndvi_range_from_stack(ndvi_stack)),
 mask_combo = create_combined_mask(ndvi = 1 - normalize(ndvi_range_from_stack(ndvi_stack)), edges = edges_combined,
                      ndvi_weight = 1, edges_weight = 2)
 
-visualize_2D_array_0_1000(mask_combo, title="Combined Mask Array, NDVI Range and Cumulative Edges")
+visualize_2D_array_0_1000(mask_combo, 
+                          title="Combined Mask Array: NDVI Range and Cumulative Edges",
+                          cmap="bone_r")
 
 
 #%%

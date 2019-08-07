@@ -11,6 +11,7 @@ Created on Wed May 29 13:27:59 2019
 import rasterio
 import numpy as np
 from skimage import exposure
+import dask.array as da
 from fields.utilities.utilities import normalize, clip_array_abs
 
 from fields import *
@@ -24,8 +25,10 @@ def read_tif_to_array (filename):
     with rasterio.open(filename) as src:
         band_array = src.read()
         band_array = np.array(band_array)
+        band_array = da.from_array(band_array, chunks = (-1, 100, 100))
+        
     
-    print("imported raster array shape: ", band_array.shape)
+    print("imported raster array shape: ", band_array.shape, "array type:", type(band_array))
     return band_array
 
   

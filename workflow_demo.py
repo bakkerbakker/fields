@@ -2,7 +2,7 @@
 """
 Created on Tue Jul 16 10:24:43 2019
 
-@author: jesse bakker
+@author: jesse bakker (bakke557@umn.edu)
 """
 
 ### Workflow Demo ###
@@ -99,10 +99,27 @@ labels_ws = segmentation_ws_func(mask_array = mask_array,
 ### Merge segments
 merge_inputs = {'merge_hierarchical_threshold': 0.07}
 
-merged_labels = merge_segments_func(input_img = rgb_image, 
+merged_labels_fz = merge_segments_func(input_img = rgb_image, 
+                                    input_labels = labels_fz, 
+                                    **merge_inputs)
+
+merged_labels_ws = merge_segments_func(input_img = rgb_image, 
                                     input_labels = labels_ws, 
                                     **merge_inputs)
 
+#%%
+
+# plot merged labels over rgb image
+fig = plt.figure(figsize=(10,10))
+plt.axis('off')
+plt.imshow(mark_boundaries(rgb_image[0:1000, 0:1000], labels_fz[0:1000, 0:1000]))
+
+#%%
+
+# plot merged labels over rgb image
+fig = plt.figure(figsize=(10,10))
+plt.axis('off')
+plt.imshow(mark_boundaries(rgb_image[0:1000, 0:1000], merged_labels_ws[0:1000, 0:1000]))
 #%%
 
 ### Need to update this so that null/zero value polygons (non-crop areas) don't get included in the shp
@@ -120,3 +137,10 @@ write_shapefile_func(merged_labels = merged_labels,
 #%%
     
 ### Compare to validation fields
+
+validation_inputs = {'ref_fp':"data/reference_fields/DigitizedRefFields_CDLsummaryjoin_TargetArea2.shp",
+                     'bbox_fp': "data/reference_fields/TargetArea2.shp",
+                     'test_fp':"outputs/test.shp"}
+
+overlay_test_df = validation_fields_comparison_func(**validation_inputs)
+
